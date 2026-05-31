@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [string]$BackgroundPath = (Join-Path $PSScriptRoot '..\bg2.png'),
+    [string]$BackgroundPath = (Join-Path $PSScriptRoot '..\bg3.png'),
     [string]$ArrowPath = (Join-Path $PSScriptRoot '..\arrow.png'),
     [string]$OutputDir = (Join-Path $PSScriptRoot '..\src'),
     [int]$BackgroundWidth = 480,
