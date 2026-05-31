@@ -2,16 +2,30 @@
 #define DISTRHO_PLUGIN_INFO_H_INCLUDED
 
 #define DISTRHO_PLUGIN_BRAND "Marti"
-#define DISTRHO_PLUGIN_NAME "Mute"
-#define DISTRHO_PLUGIN_URI "https://example.com/marti-super-distortion/mute"
-#define DISTRHO_PLUGIN_CLAP_ID "com.marti.mute"
+#define DISTRHO_PLUGIN_NAME "DIH-STORTION"
+#define DISTRHO_PLUGIN_CLAP_ID "com.marti.dih"
+#define DISTRHO_PLUGIN_URI "https://example.com/marti-super-distortion/dih-stortion"
 
 #define DISTRHO_PLUGIN_BRAND_ID Mart
 #define DISTRHO_PLUGIN_UNIQUE_ID Mute
 
-#define DISTRHO_PLUGIN_HAS_UI 0
+#define DISTRHO_PLUGIN_HAS_UI 1
 #define DISTRHO_PLUGIN_IS_RT_SAFE 1
 #define DISTRHO_PLUGIN_NUM_INPUTS 2
 #define DISTRHO_PLUGIN_NUM_OUTPUTS 2
+
+#define DISTRHO_UI_DEFAULT_WIDTH 320
+#define DISTRHO_UI_DEFAULT_HEIGHT 180
+
+enum Parameters
+{
+    kParameterThreshold,
+    kParameterRatio,
+    kParameterInputGain,
+    kParameterOutputGain,
+    kParameterFlip,
+    kParameterRect,
+    kParameterCount
+};
 
 #endif // DISTRHO_PLUGIN_INFO_H_INCLUDED

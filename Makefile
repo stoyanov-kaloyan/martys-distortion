@@ -5,12 +5,15 @@ NAME = mute
 FILES_DSP = \
 	src/main.cpp
 
+FILES_UI  = \
+	src/ui.cpp
+
 include dpf/Makefile.plugins.mk
 
-TARGETS += clap
 TARGETS += jack
-TARGETS += lv2_sep
-TARGETS += vst2
+# TARGETS += clap
+# TARGETS += lv2_sep
+# TARGETS += vst2
 TARGETS += vst3
 
 all: $(TARGETS)

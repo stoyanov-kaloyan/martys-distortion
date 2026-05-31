@@ -1,12 +1,25 @@
 /* DPF plugin include */
 #include "DistrhoPlugin.hpp"
 
-#include <cstring>
+#include <algorithm>
+#include <cmath>
 
 /* Make DPF related classes available for us to use without any extra namespace references */
 USE_NAMESPACE_DISTRHO;
 
 START_NAMESPACE_DISTRHO;
+
+namespace
+{
+
+constexpr float kDefaultThresholdDB = -27.0f;
+constexpr float kDefaultRatio = 10.0f;
+constexpr float kDefaultInputGainDB = 0.0f;
+constexpr float kDefaultOutputGainDB = 0.0f;
+constexpr float kDefaultFlip = 0.0f;
+constexpr float kDefaultRect = 0.0f;
+
+} // namespace
 
 /**
    Our custom plugin class.
@@ -22,7 +35,13 @@ public:
        Plugin class constructor.
      */
     MutePlugin()
-        : Plugin(0, 0, 0) // 0 parameters, 0 programs and 0 states
+        : Plugin(kParameterCount, 0, 0), // 6 parameters, 0 programs and 0 states
+          fParams{kDefaultThresholdDB,
+                  kDefaultRatio,
+                  kDefaultInputGainDB,
+                  kDefaultOutputGainDB,
+                  kDefaultFlip,
+                  kDefaultRect}
     {
     }
 
@@ -36,7 +55,7 @@ protected:
      */
     const char *getLabel() const override
     {
-        return "Mute";
+        return "DihStortion";
     }
 
     /**
@@ -44,7 +63,7 @@ protected:
      */
     const char *getMaker() const override
     {
-        return "DPF";
+        return "Kaloyanchester";
     }
 
     /**
@@ -70,25 +89,158 @@ protected:
      */
     int64_t getUniqueId() const override
     {
-        return d_cconst('M', 'u', 't', 'e');
+        return d_cconst('D', 'i', 'h', 'S');
     }
 
-    /* ----------------------------------------------------------------------------------------
-     * Audio/MIDI Processing */
-
-    /**
-       Run/process function for plugins without MIDI input.
-     */
-    void run(const float **, float **outputs, uint32_t frames) override
+    void initParameter(uint32_t index, Parameter &parameter) override
     {
-        // get the left and right audio outputs
-        float *const outL = outputs[0];
-        float *const outR = outputs[1];
+        parameter.hints = kParameterIsAutomatable;
 
-        // mute audio
-        std::memset(outL, 0, sizeof(float) * frames);
-        std::memset(outR, 0, sizeof(float) * frames);
+        switch (index)
+        {
+        case kParameterThreshold:
+            parameter.name = "Threshold";
+            parameter.symbol = "threshold";
+            parameter.ranges.min = -100.0f;
+            parameter.ranges.max = 0.0f;
+            parameter.ranges.def = kDefaultThresholdDB;
+            break;
+
+        case kParameterRatio:
+            parameter.name = "Ratio";
+            parameter.symbol = "ratio";
+            parameter.ranges.min = 1.0f;
+            parameter.ranges.max = 50.0f;
+            parameter.ranges.def = kDefaultRatio;
+            break;
+
+        case kParameterInputGain:
+            parameter.name = "Input Gain";
+            parameter.symbol = "input_gain";
+            parameter.unit = "dB";
+            parameter.ranges.min = -30.0f;
+            parameter.ranges.max = 6.0f;
+            parameter.ranges.def = kDefaultInputGainDB;
+            break;
+
+        case kParameterOutputGain:
+            parameter.name = "Output Gain";
+            parameter.symbol = "output_gain";
+            parameter.unit = "dB";
+            parameter.ranges.min = -30.0f;
+            parameter.ranges.max = 6.0f;
+            parameter.ranges.def = kDefaultOutputGainDB;
+            break;
+
+        case kParameterFlip:
+            parameter.hints |= kParameterIsBoolean;
+            parameter.name = "Flip";
+            parameter.symbol = "flip";
+            parameter.ranges.min = 0.0f;
+            parameter.ranges.max = 1.0f;
+            parameter.ranges.def = kDefaultFlip;
+            break;
+
+        case kParameterRect:
+            parameter.hints |= kParameterIsBoolean;
+            parameter.name = "Rect";
+            parameter.symbol = "rect";
+            parameter.ranges.min = 0.0f;
+            parameter.ranges.max = 1.0f;
+            parameter.ranges.def = kDefaultRect;
+            break;
+        }
     }
+
+    float getParameterValue(uint32_t index) const override
+    {
+        if (index >= kParameterCount)
+            return 0.0f;
+
+        return fParams[index];
+    }
+
+    void setParameterValue(uint32_t index, float value) override
+    {
+        if (index >= kParameterCount)
+            return;
+
+        fParams[index] = clampParameter(index, value);
+    }
+
+    void run(const float **inputs, float **outputs, uint32_t frames) override
+    {
+        const float *const inLeft = inputs[0];
+        const float *const inRight = inputs[1];
+        float *const outLeft = outputs[0];
+        float *const outRight = outputs[1];
+
+        const float inputGain = dbToGain(fParams[kParameterInputGain]);
+        const float outputGain = dbToGain(fParams[kParameterOutputGain]);
+        const float threshold = dbToGain(fParams[kParameterThreshold]);
+        const float ratio = std::max(1.0f, fParams[kParameterRatio]);
+        const bool flip = fParams[kParameterFlip] >= 0.5f;
+        const bool rect = fParams[kParameterRect] >= 0.5f;
+
+        for (uint32_t i = 0; i < frames; ++i)
+        {
+            outLeft[i] = chow(inLeft[i] * inputGain, threshold, ratio, flip, rect) * outputGain;
+            outRight[i] = chow(inRight[i] * inputGain, threshold, ratio, flip, rect) * outputGain;
+        }
+    }
+
+private:
+    static float dbToGain(const float db) noexcept
+    {
+        return std::pow(10.0f, db / 20.0f);
+    }
+
+    static float chow(const float x,
+                      const float threshold,
+                      const float ratio,
+                      const bool flip,
+                      const bool rect) noexcept
+    {
+        float y = x;
+
+        if (!flip && x > threshold)
+        {
+            y = threshold;
+
+            if (!rect)
+                y += (x - threshold) / ratio;
+        }
+        else if (flip && x < -threshold)
+        {
+            y = -threshold;
+
+            if (!rect)
+                y += (x + threshold) / ratio;
+        }
+
+        return y;
+    }
+
+    static float clampParameter(const uint32_t index, const float value) noexcept
+    {
+        switch (index)
+        {
+        case kParameterThreshold:
+            return std::max(-100.0f, std::min(0.0f, value));
+        case kParameterRatio:
+            return std::max(1.0f, std::min(50.0f, value));
+        case kParameterInputGain:
+        case kParameterOutputGain:
+            return std::max(-30.0f, std::min(6.0f, value));
+        case kParameterFlip:
+        case kParameterRect:
+            return value >= 0.5f ? 1.0f : 0.0f;
+        default:
+            return value;
+        }
+    }
+
+    float fParams[kParameterCount];
 };
 
 /**
