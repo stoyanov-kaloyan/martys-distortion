@@ -12,12 +12,52 @@ START_NAMESPACE_DISTRHO;
 namespace
 {
 
-constexpr float kDefaultThresholdDB = -27.0f;
-constexpr float kDefaultRatio = 10.0f;
-constexpr float kDefaultInputGainDB = 0.0f;
-constexpr float kDefaultOutputGainDB = 0.0f;
-constexpr float kDefaultFlip = 0.0f;
-constexpr float kDefaultRect = 0.0f;
+constexpr float kDefaultDoom = 0.5f;
+
+struct DoomCurve
+{
+    float low;
+    float high;
+    float bend;
+};
+
+struct DoomSettings
+{
+    float thresholdDb;
+    float ratio;
+    float inputGainDb;
+    float outputGainDb;
+    float hardClipMix;
+};
+
+// Tune these to reshape the one-knob sweep without changing the UI or host parameter list.
+constexpr DoomCurve kThresholdCurve = {-6.0f, -24.0f, 1.10f};
+constexpr DoomCurve kRatioCurve = {1.5f, 35.0f, 1.45f};
+constexpr DoomCurve kInputGainCurve = {-3.0f, 30.0f, 1.20f};
+constexpr DoomCurve kOutputGainCurve = {-2.0f, 18.0f, 1.00f};
+constexpr DoomCurve kHardClipCurve = {0.0f, 1.0f, 3.0f};
+
+static float clamp01(const float value) noexcept
+{
+    return std::max(0.0f, std::min(1.0f, value));
+}
+
+static float mapCurve(const float doom, const DoomCurve &curve) noexcept
+{
+    const float shaped = std::pow(clamp01(doom), std::max(0.001f, curve.bend));
+    return curve.low + (curve.high - curve.low) * shaped;
+}
+
+static DoomSettings makeDoomSettings(const float doom) noexcept
+{
+    return DoomSettings{
+        mapCurve(doom, kThresholdCurve),
+        mapCurve(doom, kRatioCurve),
+        mapCurve(doom, kInputGainCurve),
+        mapCurve(doom, kOutputGainCurve),
+        mapCurve(doom, kHardClipCurve),
+    };
+}
 
 } // namespace
 
@@ -35,13 +75,8 @@ public:
        Plugin class constructor.
      */
     MutePlugin()
-        : Plugin(kParameterCount, 0, 0), // 6 parameters, 0 programs and 0 states
-          fParams{kDefaultThresholdDB,
-                  kDefaultRatio,
-                  kDefaultInputGainDB,
-                  kDefaultOutputGainDB,
-                  kDefaultFlip,
-                  kDefaultRect}
+        : Plugin(kParameterCount, 0, 0),
+          fDoom(kDefaultDoom)
     {
     }
 
@@ -98,56 +133,12 @@ protected:
 
         switch (index)
         {
-        case kParameterThreshold:
-            parameter.name = "Threshold";
-            parameter.symbol = "threshold";
-            parameter.ranges.min = -100.0f;
-            parameter.ranges.max = 0.0f;
-            parameter.ranges.def = kDefaultThresholdDB;
-            break;
-
-        case kParameterRatio:
-            parameter.name = "Ratio";
-            parameter.symbol = "ratio";
-            parameter.ranges.min = 1.0f;
-            parameter.ranges.max = 50.0f;
-            parameter.ranges.def = kDefaultRatio;
-            break;
-
-        case kParameterInputGain:
-            parameter.name = "Input Gain";
-            parameter.symbol = "input_gain";
-            parameter.unit = "dB";
-            parameter.ranges.min = -30.0f;
-            parameter.ranges.max = 6.0f;
-            parameter.ranges.def = kDefaultInputGainDB;
-            break;
-
-        case kParameterOutputGain:
-            parameter.name = "Output Gain";
-            parameter.symbol = "output_gain";
-            parameter.unit = "dB";
-            parameter.ranges.min = -30.0f;
-            parameter.ranges.max = 6.0f;
-            parameter.ranges.def = kDefaultOutputGainDB;
-            break;
-
-        case kParameterFlip:
-            parameter.hints |= kParameterIsBoolean;
-            parameter.name = "Flip";
-            parameter.symbol = "flip";
+        case kParameterDoom:
+            parameter.name = "Doom";
+            parameter.symbol = "doom";
             parameter.ranges.min = 0.0f;
             parameter.ranges.max = 1.0f;
-            parameter.ranges.def = kDefaultFlip;
-            break;
-
-        case kParameterRect:
-            parameter.hints |= kParameterIsBoolean;
-            parameter.name = "Rect";
-            parameter.symbol = "rect";
-            parameter.ranges.min = 0.0f;
-            parameter.ranges.max = 1.0f;
-            parameter.ranges.def = kDefaultRect;
+            parameter.ranges.def = kDefaultDoom;
             break;
         }
     }
@@ -157,15 +148,13 @@ protected:
         if (index >= kParameterCount)
             return 0.0f;
 
-        return fParams[index];
+        return index == kParameterDoom ? fDoom : 0.0f;
     }
 
     void setParameterValue(uint32_t index, float value) override
     {
-        if (index >= kParameterCount)
-            return;
-
-        fParams[index] = clampParameter(index, value);
+        if (index == kParameterDoom)
+            fDoom = clamp01(value);
     }
 
     void run(const float **inputs, float **outputs, uint32_t frames) override
@@ -175,17 +164,16 @@ protected:
         float *const outLeft = outputs[0];
         float *const outRight = outputs[1];
 
-        const float inputGain = dbToGain(fParams[kParameterInputGain]);
-        const float outputGain = dbToGain(fParams[kParameterOutputGain]);
-        const float threshold = dbToGain(fParams[kParameterThreshold]);
-        const float ratio = std::max(1.0f, fParams[kParameterRatio]);
-        const bool flip = fParams[kParameterFlip] >= 0.5f;
-        const bool rect = fParams[kParameterRect] >= 0.5f;
+        const DoomSettings settings = makeDoomSettings(fDoom);
+        const float inputGain = dbToGain(settings.inputGainDb);
+        const float outputGain = dbToGain(settings.outputGainDb);
+        const float threshold = dbToGain(settings.thresholdDb);
+        const float ratio = std::max(1.0f, settings.ratio);
 
         for (uint32_t i = 0; i < frames; ++i)
         {
-            outLeft[i] = chow(inLeft[i] * inputGain, threshold, ratio, flip, rect) * outputGain;
-            outRight[i] = chow(inRight[i] * inputGain, threshold, ratio, flip, rect) * outputGain;
+            outLeft[i] = distort(inLeft[i] * inputGain, threshold, ratio, settings.hardClipMix) * outputGain;
+            outRight[i] = distort(inRight[i] * inputGain, threshold, ratio, settings.hardClipMix) * outputGain;
         }
     }
 
@@ -195,52 +183,24 @@ private:
         return std::pow(10.0f, db / 20.0f);
     }
 
-    static float chow(const float x,
-                      const float threshold,
-                      const float ratio,
-                      const bool flip,
-                      const bool rect) noexcept
+    static float distort(const float x,
+                         const float threshold,
+                         const float ratio,
+                         const float hardClipMix) noexcept
     {
-        float y = x;
+        const float magnitude = std::fabs(x);
 
-        if (!flip && x > threshold)
-        {
-            y = threshold;
+        if (magnitude <= threshold)
+            return x;
 
-            if (!rect)
-                y += (x - threshold) / ratio;
-        }
-        else if (flip && x < -threshold)
-        {
-            y = -threshold;
-
-            if (!rect)
-                y += (x + threshold) / ratio;
-        }
-
-        return y;
+        const float sign = x < 0.0f ? -1.0f : 1.0f;
+        const float soft = sign * (threshold + (magnitude - threshold) / ratio);
+        const float hard = sign * threshold;
+        const float mix = clamp01(hardClipMix);
+        return soft + (hard - soft) * mix;
     }
 
-    static float clampParameter(const uint32_t index, const float value) noexcept
-    {
-        switch (index)
-        {
-        case kParameterThreshold:
-            return std::max(-100.0f, std::min(0.0f, value));
-        case kParameterRatio:
-            return std::max(1.0f, std::min(50.0f, value));
-        case kParameterInputGain:
-        case kParameterOutputGain:
-            return std::max(-30.0f, std::min(6.0f, value));
-        case kParameterFlip:
-        case kParameterRect:
-            return value >= 0.5f ? 1.0f : 0.0f;
-        default:
-            return value;
-        }
-    }
-
-    float fParams[kParameterCount];
+    float fDoom;
 };
 
 /**

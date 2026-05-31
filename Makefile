@@ -6,7 +6,8 @@ FILES_DSP = \
 	src/main.cpp
 
 FILES_UI  = \
-	src/ui.cpp
+	src/ui.cpp \
+	dpf/examples/CairoUI/Artwork.cpp
 
 include dpf/Makefile.plugins.mk
 
