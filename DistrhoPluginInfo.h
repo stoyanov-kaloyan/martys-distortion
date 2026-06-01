@@ -1,7 +1,7 @@
 #ifndef DISTRHO_PLUGIN_INFO_H_INCLUDED
 #define DISTRHO_PLUGIN_INFO_H_INCLUDED
 
-#define DISTRHO_PLUGIN_BRAND "Marti"
+#define DISTRHO_PLUGIN_BRAND "Evil Plugins"
 #define DISTRHO_PLUGIN_NAME "DIH-STORTION"
 #define DISTRHO_PLUGIN_CLAP_ID "com.marti.dih"
 #define DISTRHO_PLUGIN_URI "https://example.com/marti-super-distortion/dih-stortion"

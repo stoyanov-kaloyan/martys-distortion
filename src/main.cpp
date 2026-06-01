@@ -1,10 +1,8 @@
-/* DPF plugin include */
 #include "DistrhoPlugin.hpp"
 
 #include <algorithm>
 #include <cmath>
 
-/* Make DPF related classes available for us to use without any extra namespace references */
 USE_NAMESPACE_DISTRHO;
 
 START_NAMESPACE_DISTRHO;
@@ -59,21 +57,11 @@ namespace
         };
     }
 
-} // namespace
+}
 
-/**
-   Our custom plugin class.
-   Subclassing `Plugin` from DPF is how this all works.
-
-   By default, only information-related functions and `run` are pure virtual (that is, must be reimplemented).
-   When enabling certain features (such as programs or states, more on that below), a few extra functions also need to be reimplemented.
- */
 class DistPlugin : public Plugin
 {
 public:
-    /**
-       Plugin class constructor.
-     */
     DistPlugin()
         : Plugin(kParameterCount, 0, 0),
           fDoom(kDefaultDoom)
@@ -81,38 +69,21 @@ public:
     }
 
 protected:
-    /* ----------------------------------------------------------------------------------------
-     * Information */
-
-    /**
-       Get the plugin label.
-       This label is a short restricted name consisting of only _, a-z, A-Z and 0-9 characters.
-     */
     const char *getLabel() const override
     {
-        return "DihStortion";
+        return "dih-stortion";
     }
 
-    /**
-       Get the plugin author/maker.
-     */
     const char *getMaker() const override
     {
-        return "Kaloyanchester";
+        return "Evil Plugins";
     }
 
-    /**
-       Get the plugin license name (a single line of text).
-       For commercial plugins this should return some short copyright information.
-     */
     const char *getLicense() const override
     {
         return "MIT";
     }
 
-    /**
-       Get the plugin version, in hexadecimal.
-     */
     uint32_t getVersion() const override
     {
         return d_version(1, 0, 0);
@@ -214,11 +185,6 @@ private:
     float fDoom;
 };
 
-/**
-   Create an instance of the Plugin class.
-   This is the entry point for DPF plugins.
-   DPF will call this to either create an instance of your plugin for the host or to fetch some initial information for internal caching.
- */
 Plugin *createPlugin()
 {
     return new DistPlugin();
