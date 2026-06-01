@@ -1,5 +1,5 @@
 #include "DistrhoPlugin.hpp"
-#include "Circuits/DiodeClipper.h"
+#include "Circuits/FuzzClipper.h"
 
 #include <algorithm>
 #include <cmath>
@@ -185,8 +185,8 @@ private:
     }
 
     float fDoom;
-    DiodeClipper fLeftClipper;
-    DiodeClipper fRightClipper;
+    FuzzClipper fLeftClipper;
+    FuzzClipper fRightClipper;
 };
 
 Plugin *createPlugin()
