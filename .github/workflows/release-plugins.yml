@@ -1,0 +1,200 @@
+name: Release plugins
+
+on:
+  push:
+    branches:
+      - "release/**"
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Package to build
+        required: true
+        default: macos
+        type: choice
+        options:
+          - macos
+          - all
+          - linux-x86_64
+          - windows-x86_64
+
+permissions:
+  contents: write
+
+env:
+  PLUGIN_NAME: dih-stortion
+
+jobs:
+  prepare:
+    name: Prepare build matrix
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.matrix.outputs.matrix }}
+
+    steps:
+      - name: Select packages
+        id: matrix
+        env:
+          BUILD_TARGET: ${{ github.event_name == 'workflow_dispatch' && inputs.target || 'all' }}
+        run: |
+          set -euo pipefail
+
+          case "$BUILD_TARGET" in
+            all)
+              matrix='{"include":[{"name":"linux-x86_64","runner":"ubuntu-latest","package":"dih-stortion-linux-x86_64"},{"name":"macos","runner":"macos-latest","package":"dih-stortion-macos"},{"name":"windows-x86_64","runner":"windows-latest","package":"dih-stortion-windows-x86_64"}]}'
+              ;;
+            linux-x86_64)
+              matrix='{"include":[{"name":"linux-x86_64","runner":"ubuntu-latest","package":"dih-stortion-linux-x86_64"}]}'
+              ;;
+            macos)
+              matrix='{"include":[{"name":"macos","runner":"macos-latest","package":"dih-stortion-macos"}]}'
+              ;;
+            windows-x86_64)
+              matrix='{"include":[{"name":"windows-x86_64","runner":"windows-latest","package":"dih-stortion-windows-x86_64"}]}'
+              ;;
+            *)
+              echo "Unknown build target: $BUILD_TARGET" >&2
+              exit 1
+              ;;
+          esac
+
+          echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
+
+  build:
+    name: Build ${{ matrix.name }}
+    needs: prepare
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.prepare.outputs.matrix) }}
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -yq \
+            build-essential \
+            libasound2-dev \
+            libcairo2-dev \
+            libdbus-1-dev \
+            libgl1-mesa-dev \
+            liblo-dev \
+            libpulse-dev \
+            libsdl2-dev \
+            libx11-dev \
+            libxcursor-dev \
+            libxext-dev \
+            libxrandr-dev \
+            pkg-config
+
+      - name: Set up MSYS2
+        if: runner.os == 'Windows'
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: >-
+            git
+            make
+          pacboy: >-
+            gcc:p
+            pkgconf:p
+
+      - name: Set parallelism
+        shell: bash
+        run: |
+          if command -v nproc >/dev/null 2>&1; then
+            echo "JOBS=$(nproc)" >> "$GITHUB_ENV"
+          elif command -v sysctl >/dev/null 2>&1; then
+            echo "JOBS=$(sysctl -n hw.logicalcpu)" >> "$GITHUB_ENV"
+          else
+            echo "JOBS=${NUMBER_OF_PROCESSORS:-2}" >> "$GITHUB_ENV"
+          fi
+
+      - name: Build VST2 and VST3
+        if: runner.os != 'Windows'
+        shell: bash
+        run: make -j "${JOBS}" vst2 vst3
+
+      - name: Build VST2 and VST3
+        if: runner.os == 'Windows'
+        shell: msys2 {0}
+        run: make -j "${JOBS}" vst2 vst3
+
+      - name: Stage plugin formats
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf "dist/${{ matrix.package }}"
+          mkdir -p "dist/${{ matrix.package }}/VST2" "dist/${{ matrix.package }}/VST3"
+
+          case "${{ runner.os }}" in
+            Linux)
+              cp -R "bin/${PLUGIN_NAME}-vst.so" "dist/${{ matrix.package }}/VST2/"
+              cp -R "bin/${PLUGIN_NAME}.vst3" "dist/${{ matrix.package }}/VST3/"
+              ;;
+            macOS)
+              cp -R "bin/${PLUGIN_NAME}.vst" "dist/${{ matrix.package }}/VST2/"
+              cp -R "bin/${PLUGIN_NAME}.vst3" "dist/${{ matrix.package }}/VST3/"
+              ;;
+            Windows)
+              cp -R "bin/${PLUGIN_NAME}-vst.dll" "dist/${{ matrix.package }}/VST2/"
+              cp -R "bin/${PLUGIN_NAME}.vst3" "dist/${{ matrix.package }}/VST3/"
+              ;;
+          esac
+
+      - name: Zip package
+        shell: pwsh
+        run: |
+          Compress-Archive `
+            -Path "dist/${{ matrix.package }}/*" `
+            -DestinationPath "dist/${{ matrix.package }}.zip" `
+            -Force
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.package }}
+          path: dist/${{ matrix.package }}.zip
+          if-no-files-found: error
+
+  publish-draft:
+    name: Publish draft release
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push'
+
+    steps:
+      - name: Download packages
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Create or update draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          version="${REF_NAME#release/}"
+          tag="v${version#v}"
+          title="${PLUGIN_NAME} ${tag}"
+
+          if gh release view "$tag" >/dev/null 2>&1; then
+            gh release upload "$tag" dist/*.zip --clobber
+          else
+            gh release create "$tag" dist/*.zip \
+              --draft \
+              --target "$GITHUB_SHA" \
+              --title "$title" \
+              --notes "Draft release build from ${REF_NAME}."
+          fi
