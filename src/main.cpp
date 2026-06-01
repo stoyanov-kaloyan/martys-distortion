@@ -12,52 +12,52 @@ START_NAMESPACE_DISTRHO;
 namespace
 {
 
-constexpr float kDefaultDoom = 0.5f;
+    constexpr float kDefaultDoom = 0.5f;
 
-struct DoomCurve
-{
-    float low;
-    float high;
-    float bend;
-};
-
-struct DoomSettings
-{
-    float thresholdDb;
-    float ratio;
-    float inputGainDb;
-    float outputGainDb;
-    float hardClipMix;
-};
-
-// Tune these to reshape the one-knob sweep without changing the UI or host parameter list.
-constexpr DoomCurve kThresholdCurve = {-6.0f, -24.0f, 1.10f};
-constexpr DoomCurve kRatioCurve = {1.5f, 35.0f, 1.45f};
-constexpr DoomCurve kInputGainCurve = {-3.0f, 30.0f, 1.20f};
-constexpr DoomCurve kOutputGainCurve = {-2.0f, 18.0f, 1.00f};
-constexpr DoomCurve kHardClipCurve = {0.0f, 1.0f, 3.0f};
-
-static float clamp01(const float value) noexcept
-{
-    return std::max(0.0f, std::min(1.0f, value));
-}
-
-static float mapCurve(const float doom, const DoomCurve &curve) noexcept
-{
-    const float shaped = std::pow(clamp01(doom), std::max(0.001f, curve.bend));
-    return curve.low + (curve.high - curve.low) * shaped;
-}
-
-static DoomSettings makeDoomSettings(const float doom) noexcept
-{
-    return DoomSettings{
-        mapCurve(doom, kThresholdCurve),
-        mapCurve(doom, kRatioCurve),
-        mapCurve(doom, kInputGainCurve),
-        mapCurve(doom, kOutputGainCurve),
-        mapCurve(doom, kHardClipCurve),
+    struct DoomCurve
+    {
+        float low;
+        float high;
+        float bend;
     };
-}
+
+    struct DoomSettings
+    {
+        float thresholdDb;
+        float ratio;
+        float inputGainDb;
+        float outputGainDb;
+        float hardClipMix;
+    };
+
+    // Tune these to reshape the one-knob sweep without changing the UI or host parameter list.
+    constexpr DoomCurve kThresholdCurve = {-6.0f, -30.0f, 1.10f};
+    constexpr DoomCurve kRatioCurve = {1.5f, 35.0f, 1.45f};
+    constexpr DoomCurve kInputGainCurve = {-3.0f, 30.0f, 1.20f};
+    constexpr DoomCurve kOutputGainCurve = {-2.0f, 18.0f, 1.00f};
+    constexpr DoomCurve kHardClipCurve = {0.0f, 1.0f, 3.0f};
+
+    static float clamp01(const float value) noexcept
+    {
+        return std::max(0.0f, std::min(1.0f, value));
+    }
+
+    static float mapCurve(const float doom, const DoomCurve &curve) noexcept
+    {
+        const float shaped = std::pow(clamp01(doom), std::max(0.001f, curve.bend));
+        return curve.low + (curve.high - curve.low) * shaped;
+    }
+
+    static DoomSettings makeDoomSettings(const float doom) noexcept
+    {
+        return DoomSettings{
+            mapCurve(doom, kThresholdCurve),
+            mapCurve(doom, kRatioCurve),
+            mapCurve(doom, kInputGainCurve),
+            mapCurve(doom, kOutputGainCurve),
+            mapCurve(doom, kHardClipCurve),
+        };
+    }
 
 } // namespace
 
@@ -68,13 +68,13 @@ static DoomSettings makeDoomSettings(const float doom) noexcept
    By default, only information-related functions and `run` are pure virtual (that is, must be reimplemented).
    When enabling certain features (such as programs or states, more on that below), a few extra functions also need to be reimplemented.
  */
-class MutePlugin : public Plugin
+class DistPlugin : public Plugin
 {
 public:
     /**
        Plugin class constructor.
      */
-    MutePlugin()
+    DistPlugin()
         : Plugin(kParameterCount, 0, 0),
           fDoom(kDefaultDoom)
     {
@@ -188,14 +188,25 @@ private:
                          const float ratio,
                          const float hardClipMix) noexcept
     {
-        const float magnitude = std::fabs(x);
+        float magnitude = std::fabs(x);
 
         if (magnitude <= threshold)
             return x;
 
         const float sign = x < 0.0f ? -1.0f : 1.0f;
         const float soft = sign * (threshold + (magnitude - threshold) / ratio);
-        const float hard = sign * threshold;
+
+        // const float hard = sign * threshold;
+
+        // tanh clipping
+        // const float hard = tanh(sign * magnitude);
+
+        // asymetric tanh clipping
+        // I LIKE THIS
+        const float hard = sign * std::tanh(magnitude);
+
+        // polynomial clipping
+        // const float hard = sign * (threshold + (1.0f - std::pow(1.0f - magnitude, 4.0f)) * (magnitude - threshold));
         const float mix = clamp01(hardClipMix);
         return soft + (hard - soft) * mix;
     }
@@ -210,7 +221,7 @@ private:
  */
 Plugin *createPlugin()
 {
-    return new MutePlugin();
+    return new DistPlugin();
 }
 
 END_NAMESPACE_DISTRHO;
