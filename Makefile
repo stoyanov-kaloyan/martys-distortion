@@ -1,6 +1,7 @@
 #!/usr/bin/make -f
 
 NAME = dih-stortion
+CXXFLAGS += -std=gnu++20
 
 FILES_DSP = \
 	src/main.cpp

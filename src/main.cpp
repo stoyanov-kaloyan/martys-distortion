@@ -1,4 +1,5 @@
 #include "DistrhoPlugin.hpp"
+#include "Circuits/DiodeClipper.h"
 
 #include <algorithm>
 #include <cmath>
@@ -34,6 +35,7 @@ namespace
     constexpr DoomCurve kInputGainCurve = {-3.0f, 30.0f, 1.20f};
     constexpr DoomCurve kOutputGainCurve = {-2.0f, 11.0f, 1.00f};
     constexpr DoomCurve kHardClipCurve = {0.0f, 1.0f, 3.0f};
+    constexpr DoomCurve kClipperCutoffCurve = {180.0f, 6500.0f, 1.35f};
 
     static float clamp01(const float value) noexcept
     {
@@ -128,6 +130,17 @@ protected:
             fDoom = clamp01(value);
     }
 
+    void activate() override
+    {
+        prepareClippers(getSampleRate());
+        resetClippers();
+    }
+
+    void sampleRateChanged(double newSampleRate) override
+    {
+        prepareClippers(newSampleRate);
+    }
+
     void run(const float **inputs, float **outputs, uint32_t frames) override
     {
         const float *const inLeft = inputs[0];
@@ -138,51 +151,42 @@ protected:
         const DoomSettings settings = makeDoomSettings(fDoom);
         const float inputGain = dbToGain(settings.inputGainDb);
         const float outputGain = dbToGain(settings.outputGainDb);
-        const float threshold = dbToGain(settings.thresholdDb);
-        const float ratio = std::max(1.0f, settings.ratio);
+        const float clipperCutoff = mapCurve(fDoom, kClipperCutoffCurve);
+
+        fLeftClipper.setCircuitParams(clipperCutoff);
+        fRightClipper.setCircuitParams(clipperCutoff);
 
         for (uint32_t i = 0; i < frames; ++i)
         {
-            outLeft[i] = distort(inLeft[i] * inputGain, threshold, ratio, settings.hardClipMix) * outputGain;
-            outRight[i] = distort(inRight[i] * inputGain, threshold, ratio, settings.hardClipMix) * outputGain;
+            const float left = fLeftClipper.processSample(inLeft[i] * inputGain);
+            const float right = fRightClipper.processSample(inRight[i] * inputGain);
+
+            outLeft[i] = left * outputGain;
+            outRight[i] = right * outputGain;
         }
     }
 
 private:
+    void prepareClippers(double sampleRate)
+    {
+        fLeftClipper.prepare(sampleRate);
+        fRightClipper.prepare(sampleRate);
+    }
+
+    void resetClippers()
+    {
+        fLeftClipper.reset();
+        fRightClipper.reset();
+    }
+
     static float dbToGain(const float db) noexcept
     {
         return std::pow(10.0f, db / 20.0f);
     }
 
-    static float distort(const float x,
-                         const float threshold,
-                         const float ratio,
-                         const float hardClipMix) noexcept
-    {
-        float magnitude = std::fabs(x);
-
-        if (magnitude <= threshold)
-            return x;
-
-        const float sign = x < 0.0f ? -1.0f : 1.0f;
-        const float soft = sign * (threshold + (magnitude - threshold) / ratio);
-
-        // const float hard = sign * threshold;
-
-        // tanh clipping
-        // const float hard = tanh(sign * magnitude);
-
-        // asymetric tanh clipping
-        // I LIKE THIS
-        const float hard = sign * std::tanh(magnitude);
-
-        // polynomial clipping
-        // const float hard = sign * (threshold + (1.0f - std::pow(1.0f - magnitude, 4.0f)) * (magnitude - threshold));
-        const float mix = clamp01(hardClipMix);
-        return soft + (hard - soft) * mix;
-    }
-
     float fDoom;
+    DiodeClipper fLeftClipper;
+    DiodeClipper fRightClipper;
 };
 
 Plugin *createPlugin()
