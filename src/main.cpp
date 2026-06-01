@@ -32,7 +32,7 @@ namespace
     constexpr DoomCurve kThresholdCurve = {-6.0f, -30.0f, 1.10f};
     constexpr DoomCurve kRatioCurve = {1.5f, 35.0f, 1.45f};
     constexpr DoomCurve kInputGainCurve = {-3.0f, 30.0f, 1.20f};
-    constexpr DoomCurve kOutputGainCurve = {-2.0f, 18.0f, 1.00f};
+    constexpr DoomCurve kOutputGainCurve = {-2.0f, 11.0f, 1.00f};
     constexpr DoomCurve kHardClipCurve = {0.0f, 1.0f, 3.0f};
 
     static float clamp01(const float value) noexcept
