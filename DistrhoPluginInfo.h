@@ -20,6 +20,7 @@
 enum Parameters
 {
     kParameterDoom,
+    kParameterTone,
     kParameterCount
 };
 

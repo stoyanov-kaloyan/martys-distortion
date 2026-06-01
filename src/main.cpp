@@ -1,5 +1,6 @@
 #include "DistrhoPlugin.hpp"
 #include "Circuits/FuzzClipper.h"
+#include "Circuits/LowPassFilter.h"
 
 #include <algorithm>
 #include <cmath>
@@ -12,6 +13,7 @@ namespace
 {
 
     constexpr float kDefaultDoom = 0.5f;
+    constexpr float kDefaultTone = 0.75f;
 
     struct DoomCurve
     {
@@ -36,6 +38,7 @@ namespace
     constexpr DoomCurve kOutputGainCurve = {-2.0f, 11.0f, 1.00f};
     constexpr DoomCurve kHardClipCurve = {0.0f, 1.0f, 3.0f};
     constexpr DoomCurve kClipperCutoffCurve = {180.0f, 6500.0f, 1.35f};
+    constexpr DoomCurve kToneCutoffCurve = {450.0f, 14000.0f, 1.80f};
 
     static float clamp01(const float value) noexcept
     {
@@ -66,7 +69,8 @@ class DistPlugin : public Plugin
 public:
     DistPlugin()
         : Plugin(kParameterCount, 0, 0),
-          fDoom(kDefaultDoom)
+          fDoom(kDefaultDoom),
+          fTone(kDefaultTone)
     {
     }
 
@@ -113,6 +117,13 @@ protected:
             parameter.ranges.max = 1.0f;
             parameter.ranges.def = kDefaultDoom;
             break;
+        case kParameterTone:
+            parameter.name = "Tone";
+            parameter.symbol = "tone";
+            parameter.ranges.min = 0.0f;
+            parameter.ranges.max = 1.0f;
+            parameter.ranges.def = kDefaultTone;
+            break;
         }
     }
 
@@ -121,13 +132,21 @@ protected:
         if (index >= kParameterCount)
             return 0.0f;
 
-        return index == kParameterDoom ? fDoom : 0.0f;
+        if (index == kParameterDoom)
+            return fDoom;
+
+        if (index == kParameterTone)
+            return fTone;
+
+        return 0.0f;
     }
 
     void setParameterValue(uint32_t index, float value) override
     {
         if (index == kParameterDoom)
             fDoom = clamp01(value);
+        else if (index == kParameterTone)
+            fTone = clamp01(value);
     }
 
     void activate() override
@@ -152,17 +171,20 @@ protected:
         const float inputGain = dbToGain(settings.inputGainDb);
         const float outputGain = dbToGain(settings.outputGainDb);
         const float clipperCutoff = mapCurve(fDoom, kClipperCutoffCurve);
+        const float toneCutoff = mapCurve(fTone, kToneCutoffCurve);
 
         fLeftClipper.setCircuitParams(clipperCutoff);
         fRightClipper.setCircuitParams(clipperCutoff);
+        fLeftToneFilter.setCircuitParams(toneCutoff);
+        fRightToneFilter.setCircuitParams(toneCutoff);
 
         for (uint32_t i = 0; i < frames; ++i)
         {
             const float left = fLeftClipper.processSample(inLeft[i] * inputGain);
             const float right = fRightClipper.processSample(inRight[i] * inputGain);
 
-            outLeft[i] = left * outputGain;
-            outRight[i] = right * outputGain;
+            outLeft[i] = fLeftToneFilter.processSample(left) * outputGain;
+            outRight[i] = fRightToneFilter.processSample(right) * outputGain;
         }
     }
 
@@ -171,12 +193,16 @@ private:
     {
         fLeftClipper.prepare(sampleRate);
         fRightClipper.prepare(sampleRate);
+        fLeftToneFilter.prepare(sampleRate);
+        fRightToneFilter.prepare(sampleRate);
     }
 
     void resetClippers()
     {
         fLeftClipper.reset();
         fRightClipper.reset();
+        fLeftToneFilter.reset();
+        fRightToneFilter.reset();
     }
 
     static float dbToGain(const float db) noexcept
@@ -185,8 +211,11 @@ private:
     }
 
     float fDoom;
+    float fTone;
     FuzzClipper fLeftClipper;
     FuzzClipper fRightClipper;
+    LowPassFilter fLeftToneFilter;
+    LowPassFilter fRightToneFilter;
 };
 
 Plugin *createPlugin()

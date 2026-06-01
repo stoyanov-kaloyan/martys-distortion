@@ -20,6 +20,7 @@ namespace
 {
 
     constexpr float kDefaultDoom = 0.5f;
+    constexpr float kDefaultTone = 0.75f;
 
 } // namespace
 
@@ -28,7 +29,8 @@ class MuteUI : public UI, public ImageKnob::Callback
 public:
     MuteUI()
         : UI(DISTRHO_UI_DEFAULT_WIDTH, DISTRHO_UI_DEFAULT_HEIGHT, true),
-          fDoom(kDefaultDoom)
+          fDoom(kDefaultDoom),
+          fTone(kDefaultTone)
     {
         fBackground.loadFromMemory(BackgroundArtwork::bgData,
                                    BackgroundArtwork::bgWidth,
@@ -45,18 +47,32 @@ public:
         fKnob->setDefault(kDefaultDoom);
         fKnob->setValue(fDoom);
 
+        fToneKnob = new ImageKnob(this, knobSkin);
+        fToneKnob->setAbsolutePos(288, 416);
+        fToneKnob->setCallback(this);
+        fToneKnob->setId(kParameterTone);
+        fToneKnob->setDefault(kDefaultTone);
+        fToneKnob->setValue(fTone);
+
         setGeometryConstraints(DISTRHO_UI_DEFAULT_WIDTH, DISTRHO_UI_DEFAULT_HEIGHT, true, true);
     }
 
 protected:
     void parameterChanged(const uint32_t index, const float value) override
     {
-        if (index != kParameterDoom)
-            return;
-
-        fDoom = clamp01(value);
-        fKnob->setValue(fDoom);
-        repaint();
+        switch (index)
+        {
+        case kParameterDoom:
+            fDoom = clamp01(value);
+            fKnob->setValue(fDoom);
+            repaint();
+            break;
+        case kParameterTone:
+            fTone = clamp01(value);
+            fToneKnob->setValue(fTone);
+            repaint();
+            break;
+        }
     }
 
     void onDisplay() override
@@ -71,35 +87,51 @@ protected:
 private:
     void imageKnobDragStarted(ImageKnob *knob) override
     {
-        if (knob->getId() == kParameterDoom)
-            editParameter(kParameterDoom, true);
+        editParameter(knob->getId(), true);
     }
 
     void imageKnobDragFinished(ImageKnob *knob) override
     {
-        if (knob->getId() == kParameterDoom)
-            editParameter(kParameterDoom, false);
+        editParameter(knob->getId(), false);
     }
 
     void imageKnobValueChanged(ImageKnob *knob, const float value) override
     {
-        if (knob->getId() != kParameterDoom)
-            return;
+        const uint32_t index = knob->getId();
+        const float clampedValue = clamp01(value);
 
-        fDoom = clamp01(value);
-        setParameterValue(kParameterDoom, fDoom);
-        repaint();
+        switch (index)
+        {
+        case kParameterDoom:
+            fDoom = clampedValue;
+            setParameterValue(kParameterDoom, fDoom);
+            repaint();
+            break;
+        case kParameterTone:
+            fTone = clampedValue;
+            setParameterValue(kParameterTone, fTone);
+            repaint();
+            break;
+        }
     }
 
     void imageKnobDoubleClicked(ImageKnob *knob) override
     {
-        if (knob->getId() != kParameterDoom)
-            return;
-
-        fDoom = kDefaultDoom;
-        fKnob->setValue(fDoom);
-        setParameterValue(kParameterDoom, fDoom);
-        repaint();
+        switch (knob->getId())
+        {
+        case kParameterDoom:
+            fDoom = kDefaultDoom;
+            fKnob->setValue(fDoom);
+            setParameterValue(kParameterDoom, fDoom);
+            repaint();
+            break;
+        case kParameterTone:
+            fTone = kDefaultTone;
+            fToneKnob->setValue(fTone);
+            setParameterValue(kParameterTone, fTone);
+            repaint();
+            break;
+        }
     }
 
     void drawBackground(const GraphicsContext &context, const int offsetX, const int offsetY)
@@ -118,7 +150,9 @@ private:
 
     Image fBackground;
     float fDoom;
+    float fTone;
     ScopedPointer<ImageKnob> fKnob;
+    ScopedPointer<ImageKnob> fToneKnob;
 };
 
 UI *createUI()
