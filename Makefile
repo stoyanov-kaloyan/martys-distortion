@@ -1,6 +1,6 @@
 #!/usr/bin/make -f
 
-NAME = mute
+NAME = dih-stortion
 
 FILES_DSP = \
 	src/main.cpp
