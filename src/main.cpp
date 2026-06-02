@@ -89,10 +89,6 @@ protected:
         return d_version(1, 0, 0);
     }
 
-    /**
-       Get the plugin unique Id.
-       This value is used by LADSPA, DSSI, VST2 and VST3 plugin formats.
-     */
     int64_t getUniqueId() const override
     {
         return d_cconst('D', 'i', 'h', 'S');
@@ -167,17 +163,8 @@ private:
         const float sign = x < 0.0f ? -1.0f : 1.0f;
         const float soft = sign * (threshold + (magnitude - threshold) / ratio);
 
-        // const float hard = sign * threshold;
-
-        // tanh clipping
-        // const float hard = tanh(sign * magnitude);
-
-        // asymetric tanh clipping
-        // I LIKE THIS
         const float hard = sign * std::tanh(magnitude);
 
-        // polynomial clipping
-        // const float hard = sign * (threshold + (1.0f - std::pow(1.0f - magnitude, 4.0f)) * (magnitude - threshold));
         const float mix = clamp01(hardClipMix);
         return soft + (hard - soft) * mix;
     }
