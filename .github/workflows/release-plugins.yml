@@ -2,8 +2,8 @@ name: Release plugins
 
 on:
   push:
-    branches:
-      - "release/**"
+    tags:
+      - "v*.*.*"
   workflow_dispatch:
     inputs:
       target:
@@ -182,11 +182,9 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-          REF_NAME: ${{ github.ref_name }}
         run: |
           set -euo pipefail
-          version="${REF_NAME#release/}"
-          tag="v${version#v}"
+          tag="${GITHUB_REF_NAME}"
           title="${PLUGIN_NAME} ${tag}"
 
           if gh release view "$tag" >/dev/null 2>&1; then
@@ -194,7 +192,7 @@ jobs:
           else
             gh release create "$tag" dist/*.zip \
               --draft \
-              --target "$GITHUB_SHA" \
+              --verify-tag \
               --title "$title" \
-              --notes "Draft release build from ${REF_NAME}."
+              --notes "Draft release build from ${tag}."
           fi
